@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hindi Suggestions</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 50px;
+        }
+
+        .container {
+            position: relative;
+            width: 60vw;
+        }
+
+        textarea {
+            width: 60vw;
+            height: 50vh;
+            padding: 12px;
+            font-size: 20px;
+            border: 2px solid #ccc;
+            border-radius: 5px;
+            resize: none;
+            text-align: start;
+            vertical-align: top;
+            line-height: 1.5;
+            overflow-y: auto;
+            font-family: Arial, sans-serif;
+        }
+
+        .suggestions {
+            position: fixed; /* Fixed for precise positioning */
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background: white;
+            z-index: 10;
+            display: none;
+            max-height: 200px;
+            overflow-y: auto;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+            min-width: 150px;
+        }
+
+        .suggestions div {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            font-size: 18px;
+        }
+
+        .suggestions div:hover {
+            background: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Welcome</h1>
+    <div class="container">
+        <textarea id="inputBox" placeholder="यहाँ टाइप करें..."></textarea>
+        <div class="suggestions" id="suggestionBox"></div>
+    </div>
+
+    <script>
+        const inputBox = document.getElementById("inputBox");
+        const suggestionBox = document.getElementById("suggestionBox");
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        function calculateTextWidth(text, fontSize = "20px", fontFamily = "Arial") {
+            ctx.font = `${fontSize} ${fontFamily}`;
+            return ctx.measureText(text).width;
+        }
+
+        inputBox.addEventListener("input", async function () {
+            const cursorPosition = inputBox.selectionStart;
+            const textBeforeCursor = inputBox.value.substring(0, cursorPosition);
+            const words = textBeforeCursor.trim().split(/\s+/);
+            const lastWords = words.slice(-4).join(" ").toLowerCase(); // Take last 4 words or fewer
+
+
+            if (lastWords === "") {
+                suggestionBox.style.display = "none";
+                return;
+            }
+
+            // Send lastWord to the backend
+            try {
+                const response = await fetch("/suggest", {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: lastWords })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                        console.error("Server error:", data.error);
+                        return;
+                }
+
+                // Expecting an array of suggestions
+                const filteredSuggestions = Array.isArray(data) ? data : [];
+                if (filteredSuggestions.length === 0) {
+                    suggestionBox.style.display = "none";
+                    return;
+                }
+                
+                console.log(filteredSuggestions);
+                suggestionBox.innerHTML = filteredSuggestions
+                    .map((suggestion, index) => `<div data-index="${index + 1}">${index + 1}. ${suggestion}</div>`)
+                    .join("");
+
+                // Get the exact position of the last word
+                const textAreaRect = inputBox.getBoundingClientRect();
+                const computedStyle = window.getComputedStyle(inputBox);
+                const fontSize = computedStyle.fontSize;
+                const lineHeight = parseInt(fontSize) * 1.5;
+                const textLines = textBeforeCursor.split("\n");
+                const lastLine = textLines[textLines.length - 1];
+                const wordsInLine = lastLine.split(" ");
+                const lastWordIndex = wordsInLine.length - 1;
+
+                // calculate text width using canvas
+                const xOffset = calculateTextWidth(wordsInLine.slice(0, lastWordIndex).join(" "), fontSize);
+                const yOffset = (textLines.length - 1) * lineHeight;
+
+                suggestionBox.style.left = `${textAreaRect.left + xOffset + window.scrollX + 10}px`;
+                suggestionBox.style.top = `${textAreaRect.top + yOffset + lineHeight + window.scrollY + 5}px`;
+                suggestionBox.style.display = "block";
+            } catch (error) {
+                console.error("Error fetching suggestions:", error);
+            }
+        });
+
+        function insertSuggestionAtCursor(suggestion) {
+                const inputBox = document.getElementById("inputBox");
+                const cursorPosition = inputBox.selectionStart;
+                const text = inputBox.value;
+                const textBeforeCursor = text.substring(0, cursorPosition);
+                const textAfterCursor = text.substring(cursorPosition);
+
+        // Get last N words before cursor
+                const words = textBeforeCursor.trim().split(/\s+/);
+                const lastN = 4;
+                const contextWords = words.slice(-lastN);
+                const context = contextWords.join(" ");
+                let insertText;
+
+                if (context && suggestion.startsWith(context)) {
+                // Suggestion starts with what user already typed — only append rest
+                        insertText = suggestion.substring(context.length).trimStart();
+                } else {
+                // No common context — insert full suggestion
+                        insertText = suggestion;
+                }
+
+                // Insert suggestion directly at the cursor without removing existing typed words
+                const newText = textBeforeCursor + insertText + " " + textAfterCursor;
+                const newCursorPos = (textBeforeCursor + insertText + " ").length;
+
+                inputBox.value = newText;
+                inputBox.setSelectionRange(newCursorPos, newCursorPos);
+                suggestionBox.style.display = "none";
+}
+
+
+        suggestionBox.addEventListener("click", function(event) {
+            if (event.target.tagName === "DIV") {
+                const suggestion = event.target.textContent.slice(3); // Remove numbering
+                insertSuggestionAtCursor(suggestion);
+            }
+        });
+
+        inputBox.addEventListener("keydown", function(event) {
+            if (event.key >= "1" && event.key <= "9") {
+                const index = parseInt(event.key, 10) - 1;
+                const items = suggestionBox.querySelectorAll("div");
+                if (items[index]) {
+                    const suggestion = items[index].textContent.slice(3); // Remove numbering
+                    insertSuggestionAtCursor(suggestion);
+                    event.preventDefault();
+                }
+            }
+        });
+
+
+        document.addEventListener("click", function (event) {
+            if (!inputBox.contains(event.target) && !suggestionBox.contains(event.target)) {
+                suggestionBox.style.display = "none";
+            }
+        });
+    </script>
+
+</body>
+</html>
+
+
+
