@@ -61,27 +61,27 @@ This system is designed for speed and scalability, making it ideal for use in in
 ## 📦 Setup Instructions
 
 ### 1) Clone the Repository
-git clone git@github.com:yourusername/hindi-text-suggestion-system.git
-cd hindi-text-suggestion-system
+- git clone git@github.com:yourusername/hindi-text-suggestion-system.git
+- cd hindi-text-suggestion-system
 
 ### 2) Start the C Server (in background or service)
 ./main Dictionary/ Input/
 
 ### 3) Deploy with Apache + WSGI
 Make sure /etc/apache2/sites-enabled/hindi_suggestions.conf points to:
-WSGIScriptAlias /suggest /var/www/hindi_suggestions/app.wsgi
+- WSGIScriptAlias /suggest /var/www/hindi_suggestions/app.wsgi
 
 ### 4) Start Apache
 sudo systemctl start apache2
 
 ### 5) Open WebBrowser
-Enter http://localhost/
-Try out Typing in Hindi and have Fun!
+- Enter http://localhost/
+- Try out Typing in Hindi and have Fun!
 
 ## ✍️ Future Improvements
-User-specific frequency learning (adaptive suggestion ranking).
-Unicode normalization for broader Devanagari coverage.
-React-based frontend for better UX and mobile compatibility.
+- User-specific frequency learning (adaptive suggestion ranking).
+- Unicode normalization for broader Devanagari coverage.
+- React-based frontend for better UX and mobile compatibility.
 
 ## 📄 License
 This project is open-source and available under the MIT License.
