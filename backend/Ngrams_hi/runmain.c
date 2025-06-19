@@ -10,15 +10,15 @@
 #include <limits.h>
 #include"ngrams_hi.c"
 #include"dict_trie.c"
-#include"trie_hi.c"
 #include"ngram_trie_hi.c"
 
+#define WORD_MAX_LEN 100
 #define MAX_FILES 100
 #define WORD_LEN 64
 
 typedef struct TrieManager {
-    DictTrieNode *dictionaryRoot;
-    unigramTrieNode *unigramRoot;
+    TrieNode *dictionaryRoot;
+    TrieNode *unigramRoot;
     ngramTrieNode *bigramRoot;
     ngramTrieNode *trigramRoot;
     ngramTrieNode *fourgramRoot;
@@ -40,6 +40,73 @@ char* to_utf8(const wchar_t* wstr) {
     wcstombs(mbstr, wstr, len + 1);
     return mbstr;
 }
+
+void suggestCompletions(TrieNode *node, wchar_t *buffer, int depth, FILE *out, int *count) {
+    if (*count >= 10) return;
+
+    if (node->isWord) {
+        buffer[depth] = L'\0';
+
+        char *utf8str = to_utf8(buffer);
+        if (utf8str) {
+            fprintf(out, "%s\n", utf8str);
+            fwprintf(stderr, L"Suggestion[%d]: %ls\n", *count, buffer);
+            free(utf8str);
+        } else {
+            fwprintf(stderr, L"UTF-8 conversion failed for suggestion[%d]: %ls\n", *count, buffer);
+        }
+
+        (*count)++;
+    }
+
+    for (int i = 0; i < MAX_CHILDREN; ++i) {
+        if (node->children[i]) {
+            buffer[depth] = (wchar_t)(i + UNICODE_BASE);
+            suggestCompletions(node->children[i], buffer, depth + 1, out, count);
+        }
+    }
+}
+
+void fuzzySearchToFile(TrieNode *root, const wchar_t *query, int maxEdits, FILE *out) {
+    wchar_t current[WORD_MAX_LEN];
+    int foundCount = 0;
+
+    void helper(TrieNode *node, const wchar_t *query, wchar_t *current, int depth, int maxEdits, int *foundCount) {
+        if (*foundCount >= 10 || node == NULL) return;
+
+        if (node->isWord && wcslen(query) <= depth + maxEdits) {
+            current[depth] = L'\0';
+
+            char *utf8str = to_utf8(current);
+            if (utf8str) {
+                fprintf(out, "%s\n", utf8str);
+                fwprintf(stderr, L"Suggestion[%d] (fuzzy): %ls\n", *foundCount, current);
+                free(utf8str);
+            } else {
+                fwprintf(stderr, L"UTF-8 conversion failed for fuzzy suggestion[%d]: %ls\n", *foundCount, current);
+            }
+
+            (*foundCount)++;
+        }
+
+        for (int i = 0; i < MAX_CHILDREN; i++) {
+            if (node->children[i]) {
+                wchar_t ch = (wchar_t)(UNICODE_BASE + i);
+                current[depth] = ch;
+                current[depth + 1] = L'\0';
+
+                int cost = (depth < wcslen(query)) ? (query[depth] != ch) : 1;
+
+                if (maxEdits - cost >= 0) {
+                    helper(node->children[i], query, current, depth + 1, maxEdits - cost, foundCount);
+                }
+            }
+        }
+    }
+
+    helper(root, query, current, 0, maxEdits, &foundCount);
+}
+
 
 int getSuggestionsFromTries(const wchar_t *input, TrieManager manager, FILE *out) {
     wchar_t w1[WORD_LEN] = L"", w2[WORD_LEN] = L"", w3[WORD_LEN] = L"", w4[WORD_LEN] = L"";
@@ -150,8 +217,8 @@ int main(int argc, char *argv[])
     }
 
    TrieManager manager;
-   manager.dictionaryRoot = buildDictTrie(dictCount, dictFiles);
-   manager.unigramRoot = buildUnigramTrie(inputCount, inputFiles);
+   manager.dictionaryRoot = buildUnifiedTrie(inputCount, inputFiles, dictCount, dictFiles);
+   manager.unigramRoot = manager.dictionaryRoot;
    generateNgrams(inputCount, inputFiles);
    manager.bigramRoot = buildNgramTrie("2grms.txt");
    manager.trigramRoot = buildNgramTrie("3grms.txt");
@@ -192,18 +259,28 @@ int main(int argc, char *argv[])
         	token = wcstok(NULL, L" ", &state);
     	}
 
-        if (searchDict(manager.dictionaryRoot, lastWord)) {
-            //fprintf(stderr, "DEBUG: Exact match found in dictionary\n");
-	    // Valid word, use n-gram trie
-            int found = getSuggestionsFromTries(input, manager, out);
-	    if (!found) {
-        	// Dictionary match exists but no context match
-        	fuzzySearchToFile(manager.dictionaryRoot, lastWord, 2, out);
-    	    }
-        } else {
-	    //fprintf(stderr, "DEBUG: No exact match, using fuzzy search\n");
-            fuzzySearchToFile(manager.dictionaryRoot, lastWord, 2, out);
-        } 
+	if (searchDict(manager.dictionaryRoot, lastWord)) {
+        // Exact match found in dictionary, use context-aware n-gram suggestions
+        	int found = getSuggestionsFromTries(input, manager, out);
+        	if (!found) {
+            		fuzzySearchToFile(manager.dictionaryRoot, lastWord, 2, out);
+        		}
+    	} else {
+        // No exact match, try prefix match
+        	TrieNode *prefixNode = searchPrefix(manager.dictionaryRoot, lastWord);
+        	if (prefixNode) {
+            		// Suggest completions from prefix
+            		fwprintf(out, L"Suggested completions for \"%ls\":\n", lastWord);
+            		wchar_t buffer[WORD_MAX_LEN];
+            		wcsncpy(buffer, lastWord, WORD_MAX_LEN - 1);
+            		int depth = wcslen(lastWord);
+            		int count = 0;
+            		suggestCompletions(prefixNode, buffer, depth, out, &count);
+        	} else {
+            		// No prefix match, use fuzzy search
+            		fuzzySearchToFile(manager.dictionaryRoot, lastWord, 2, out);
+        	}
+    	}
 
         fflush(out);
     }
@@ -215,7 +292,7 @@ int main(int argc, char *argv[])
    for (int i = 0; i < dictCount; ++i) free(dictFiles[i]);
    for (int i = 0; i < inputCount; ++i) free(inputFiles[i]);
    freeDictTrie(manager.dictionaryRoot);
-   freeUnigramTrie(manager.unigramRoot);
+   freeDictTrie(manager.unigramRoot);
    freeNgramTrie(manager.bigramRoot);
    freeNgramTrie(manager.trigramRoot);
    freeNgramTrie(manager.fourgramRoot);

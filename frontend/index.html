@@ -137,36 +137,56 @@
             }
         });
 
-        function insertSuggestionAtCursor(suggestion) {
-                const inputBox = document.getElementById("inputBox");
-                const cursorPosition = inputBox.selectionStart;
-                const text = inputBox.value;
-                const textBeforeCursor = text.substring(0, cursorPosition);
-                const textAfterCursor = text.substring(cursorPosition);
+	function insertSuggestionAtCursor(suggestion) {
+    		const inputBox = document.getElementById("inputBox");
+    		const cursorPosition = inputBox.selectionStart;
+   		const text = inputBox.value;
+    		const textBeforeCursor = text.substring(0, cursorPosition);
+    		const textAfterCursor = text.substring(cursorPosition);
 
-        // Get last N words before cursor
-                const words = textBeforeCursor.trim().split(/\s+/);
-                const lastN = 4;
-                const contextWords = words.slice(-lastN);
-                const context = contextWords.join(" ");
-                let insertText;
+    		const words = textBeforeCursor.trim().split(/\s+/);
+    		const lastN = 4;
+    		const contextWords = words.slice(-lastN);
+    		const context = contextWords.join(" ");
+    		let insertText = "";
+    		let newCursorPos;
 
-                if (context && suggestion.startsWith(context)) {
-                // Suggestion starts with what user already typed — only append rest
-                        insertText = suggestion.substring(context.length).trimStart();
-                } else {
-                // No common context — insert full suggestion
-                        insertText = suggestion;
-                }
+    		const lastChar = textBeforeCursor.slice(-1);
+    		const lastTypedWord = words[words.length - 1];
+    		const suggestionWords = suggestion.trim().split(/\s+/);
+    		const isFullWordInSuggestion = suggestionWords.includes(lastTypedWord);
 
-                // Insert suggestion directly at the cursor without removing existing typed words
-                const newText = textBeforeCursor + insertText + " " + textAfterCursor;
-                const newCursorPos = (textBeforeCursor + insertText + " ").length;
+    		if (context && suggestion.startsWith(context)) {
+        		insertText = suggestion.substring(context.length).trimStart();
 
-                inputBox.value = newText;
-                inputBox.setSelectionRange(newCursorPos, newCursorPos);
-                suggestionBox.style.display = "none";
-}
+        		if (isFullWordInSuggestion && lastChar !== ' ') {
+            			insertText = " " + insertText;
+        		}	
+
+        		const newText = textBeforeCursor + insertText + textAfterCursor;
+        		newCursorPos = (textBeforeCursor + insertText).length;
+        		inputBox.value = newText;
+    		} else {
+        		// Partial word case: find last word fragment
+        		const match = textBeforeCursor.match(/(\S+)$/);
+        		const partialWord = match ? match[0] : "";
+
+        		if (suggestion.startsWith(partialWord)) {
+            			insertText = suggestion.substring(partialWord.length);
+        		} else {
+            			// Full suggestion
+            			insertText = (lastChar !== ' ' ? " " : "") + suggestion + " ";
+        		}
+
+        		const newText = textBeforeCursor + insertText + textAfterCursor;
+        		newCursorPos = (textBeforeCursor + insertText).length;
+        		inputBox.value = newText;
+    		}
+
+    		inputBox.setSelectionRange(newCursorPos, newCursorPos);
+    		suggestionBox.style.display = "none";
+	}
+	
 
 
         suggestionBox.addEventListener("click", function(event) {
