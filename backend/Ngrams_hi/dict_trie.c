@@ -167,7 +167,7 @@ int searchDict(TrieNode *root, const wchar_t *word) {
         word++;
     }
 
-    return node && node->isWord;
+    return node && (node->isWord || node->frequency > 0);
 }
 
 TrieNode* searchPrefix(TrieNode *root, const wchar_t *prefix) {

@@ -44,7 +44,7 @@ char* to_utf8(const wchar_t* wstr) {
 void suggestCompletions(TrieNode *node, wchar_t *buffer, int depth, FILE *out, int *count) {
     if (*count >= 10) return;
 
-    if (node->isWord) {
+    if (node->isWord || node->frequency > 0) {
         buffer[depth] = L'\0';
 
         char *utf8str = to_utf8(buffer);
@@ -74,7 +74,7 @@ void fuzzySearchToFile(TrieNode *root, const wchar_t *query, int maxEdits, FILE 
     void helper(TrieNode *node, const wchar_t *query, wchar_t *current, int depth, int maxEdits, int *foundCount) {
         if (*foundCount >= 10 || node == NULL) return;
 
-        if (node->isWord && wcslen(query) <= depth + maxEdits) {
+        if ((node->isWord || node->frequency > 0) && wcslen(query) <= depth + maxEdits) {
             current[depth] = L'\0';
 
             char *utf8str = to_utf8(current);
